@@ -1,0 +1,143 @@
+import { AnswerItem } from "./AnswerItem";
+import type {
+  IAnswer,
+  IQuestionFullData,
+  IRerouteHistoryResponse,
+  ISubmission,
+  UserRole,
+} from "@/types";
+import { Badge } from "@/components/atoms/badge";
+import { Timeline } from "primereact/timeline";
+import AvatarComponent from "@/components/avatar-component";
+
+interface IAnswerTimelineProps {
+  answers: IAnswer[];
+  currentUserId: string | undefined;
+  question: IQuestionFullData;
+  answerVisibleCount: number;
+  commentRef: React.RefObject<HTMLDivElement>;
+  userRole: UserRole;
+  queue: ISubmission["queue"];
+  rerouteQuestion?: IRerouteHistoryResponse[];
+  isDedicatedView?: boolean;
+}
+export const AnswerTimeline = ({
+  answers,
+  currentUserId,
+  question,
+  answerVisibleCount,
+  commentRef,
+  userRole,
+  queue,
+  rerouteQuestion,
+  isDedicatedView = false,
+}: IAnswerTimelineProps) => {
+  // map answers to timeline events
+  console.log("Answers from primitive component ->", answers)
+  const events = answers
+    .slice(0, answerVisibleCount)
+    .map((ans, index) => {
+      const submission = question.submission.history.find(
+        (h) => h.answer?._id === ans?._id
+      );
+// console.log("answer is ->", ans)
+      return {
+        index,
+        lastAnswerId: answers[0]?._id, // first one will be the last one
+        firstAnswerId: answers[answers?.length - 1]?._id, // last one will be the first one
+        answer: ans,
+        submission,
+        createdAt: new Date(ans.createdAt || "").toLocaleString(),
+      };
+    });
+
+    
+
+  return (
+    <div className="w-full">
+      <Timeline
+        value={events}
+        align="alternate"
+        opposite={(item) => (
+          <div className="ml-5 flex flex-col">
+            {item.submission?.updatedBy && (
+              <div
+                className={`text-sm text-foreground rounded-md flex ${item.index % 2 === 0 ? "justify-end" : "justify-start"
+                  }`}
+              >
+                {(userRole === "expert") && <span className="font-medium">By:</span>}{" "}
+                {/* <span>
+                  {(userRole === "moderator" || userRole === "admin") && (
+                    <AvatarComponent
+                      name={item?.submission?.updatedBy?.name}
+                      image={item?.submission?.updatedBy?.avatar}
+                    />
+                  )}&nbsp;
+                  {item?.submission?.updatedBy?.name}
+                  {item?.submission?.updatedBy?.email && (
+                    <> ({item.submission.updatedBy.email})</>
+                  )}
+                </span> */}
+                <div className="flex gap-1 items-center">
+                  {(userRole === "moderator" || userRole === "admin" || userRole === "tester") && (
+                    <AvatarComponent
+                      name={item?.submission?.updatedBy?.name}
+                      image={item?.submission?.updatedBy?.avatar}
+                    />
+                  )}
+                  {item?.submission?.updatedBy?.name}
+                  {item?.submission?.updatedBy?.email && (
+                    <> ({item.submission.updatedBy.email})</>
+                  )}
+                  {item?.submission?.updatedBy?.email &&
+                    item?.firstAnswerId === item?.submission?.answer?._id && (
+                      <span className="ml-2 px-2 py-0.5 text-[10px] rounded-full bg-blue-100 text-blue-700 font-semibold">
+                        Author
+                      </span>
+                    )}
+                </div>
+
+              </div>
+            )}
+
+            <small className="text-xs text-muted-foreground mt-1">
+              {item.createdAt}
+            </small>
+            <div>
+              {item?.submission?.isReroute && (
+                <Badge
+                  variant="outline"
+                  className="text-green-600 border-green-600"
+                >
+                  ReRouted
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
+        content={(item) => (
+          <div className="flex-1 mb-5">
+            <AnswerItem
+              answer={item.answer}
+              lastAnswerId={item.lastAnswerId}
+              firstAnswerId={item.firstAnswerId}
+              submissionData={item.submission}
+              currentUserId={currentUserId}
+              questionStatus={question.status}
+              questionId={question._id}
+              ref={commentRef}
+              userRole={userRole}
+              queue={queue}
+              rerouteQuestion={rerouteQuestion}
+              lastAnswerApprovalCount={answers[0].approvalCount}
+              paeReview={question.pae_review}
+              isDedicatedView={isDedicatedView}
+              assignedModerator={question.assigned_moderator}
+              isAssignedModerator={question.isAssignedModerator}
+            />
+          </div>
+        )}
+      />
+    </div>
+  );
+};

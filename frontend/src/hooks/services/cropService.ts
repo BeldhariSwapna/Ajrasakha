@@ -1,0 +1,118 @@
+import { apiFetch } from "../api/api-fetch";
+import { env } from "@/config/env";
+import { auth } from "@/config/firebase";
+import { getIdToken } from "firebase/auth";
+
+const API_BASE_URL = env.apiBaseUrl();
+
+export interface ICropAlias {
+  language: string;
+  region: string;
+  english_representation: string;
+  native_representation: string;
+}
+
+export interface ICropResponse {
+  _id?: string;
+  name: string;
+  status?: string;
+  type?: string;
+  aliases: (ICropAlias | string)[];  // string = legacy format from older crops
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  crops?: string[];
+}
+
+export interface ICreateCropPayload {
+  name: string;
+  status?: string;
+  type?: string;
+  aliases?: ICropAlias[];
+  crops?: string[];
+}
+
+export interface ICreateCropResponse {
+  success: boolean;
+  message: string;
+  data: ICropResponse;
+}
+
+export interface IGetAllCropsResponse {
+  crops: ICropResponse[];
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface IUpdateCropPayload {
+  name?: string;
+  aliases?: (ICropAlias | string)[];
+  crops?: string[];
+  status?: string;
+}
+
+export interface IBulkUploadCropResponse {
+  success: boolean;
+  message: string;
+  jobId: string;
+  count: number;
+  isBulkUpload: true;
+}
+
+export class CropService {
+  private _baseUrl = `${API_BASE_URL}/crops`;
+
+  async createCrop(payload: ICreateCropPayload): Promise<ICreateCropResponse | null> {
+    return apiFetch<ICreateCropResponse>(this._baseUrl, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateCrop(cropId: string, payload: IUpdateCropPayload): Promise<ICreateCropResponse | null> {
+    return apiFetch<ICreateCropResponse>(`${this._baseUrl}/${cropId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async bulkUploadCrops(file: File, type: "crop" | "chemical"): Promise<IBulkUploadCropResponse | null> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("type", type);
+    return apiFetch<IBulkUploadCropResponse>(this._baseUrl, {
+      method: "POST",
+      body: formData,
+    });
+  }
+
+  async downloadList(type: 'crop' | 'chemical'): Promise<Blob> {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) throw new Error("User not authenticated");
+    const token = await getIdToken(firebaseUser);
+    const response = await fetch(`${this._baseUrl}/download?type=${type}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error(`Failed to download ${type} list`);
+    return response.blob();
+  }
+
+  async getAllCrops(query?: {
+    search?: string;
+    sort?: string;
+    page?: number;
+    limit?: number;
+    type?: string;
+  }): Promise<IGetAllCropsResponse | null> {
+    const params = new URLSearchParams();
+    if (query?.search) params.append("search", query.search);
+    if (query?.sort) params.append("sort", query.sort);
+    if (query?.page) params.append("page", query.page.toString());
+    if (query?.limit) params.append("limit", query.limit.toString());
+    if (query?.type) params.append("type", query.type);
+
+    return apiFetch<IGetAllCropsResponse>(`${this._baseUrl}?${params.toString()}`);
+  }
+}

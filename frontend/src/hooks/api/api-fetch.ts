@@ -1,0 +1,86 @@
+import { auth } from "@/config/firebase";
+import { useAuthStore } from "@/stores/auth-store";
+import { getIdToken, type User } from "firebase/auth";
+import { isDevelopment } from "@/shared/app";
+
+export const getCurrentUser = (): Promise<User | null> => {
+  return new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      unsubscribe();
+      resolve(user);
+    });
+  });
+};
+export const apiFetch = async <T>(
+  url: string,
+  options: RequestInit = {}
+): Promise<T | null> => {
+  let token: string | null = null;
+
+  if (isDevelopment) {
+    token = "dev-token";
+  } else {
+    const firebaseUser = await getCurrentUser();
+    if (firebaseUser) {
+      try {
+        token = await getIdToken(firebaseUser);
+      } catch (err) {
+        console.error("Failed to get token:", err);
+      }
+    }
+  }
+
+  const isFormData = options.body instanceof FormData;
+
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+  };
+  // const headers = {
+  //   ...(options.headers || {}),
+  //   Authorization: token ? `Bearer ${token}` : "",
+  //   "Content-Type": "application/json",
+  // };
+
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  if (res.status === 404 && options?.method === "PUT") {
+    return null as T;
+  }
+
+  const text = await res.text();
+  const safeJson = (t: string) => {
+    try {
+      return t ? JSON.parse(t) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const data = safeJson(text);
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      console.warn("Unauthorized request, clearing user and redirecting to login");
+      const { clearUser } = useAuthStore.getState();
+      clearUser();
+      window.location.href = "/auth";
+      return null;
+    }
+    let errorMessage = `Request failed with status ${res.status}`;
+    if (data?.message) {
+      errorMessage = data.message;
+    } else if (res.statusText) {
+      errorMessage = res.statusText;
+    } else if (text && text.length < 200) {
+      errorMessage = text;
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  return data as T;
+};

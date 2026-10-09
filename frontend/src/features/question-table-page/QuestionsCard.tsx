@@ -1,0 +1,462 @@
+import type { IDetailedQuestion, QuestionStatus, UserRole } from "@/types";
+import React, { useMemo, useState } from "react";
+import { useGetCurrentUser } from "@/hooks/api/user/useGetCurrentUser";
+import { buildHoldCountdownOptions } from "@/hooks/ui/useCountdown";
+import { useQuestionClickability } from "@/hooks/ui/useQuestionClickability";
+import { Badge } from "../../components/atoms/badge";
+import { TimerDisplay } from "../../components/timer-display";
+import { formatDate } from "@/utils/formatDate";
+import { getTimerStartTime } from "@/utils/getTimerStartTime";
+import {
+  AlertCircle,
+  Calendar,
+  CheckSquare,
+  Edit,
+  Eye,
+  MapPin,
+  MessageCircle,
+  Sprout,
+  Trash2,
+  User,
+} from "lucide-react";
+import { ConfirmationModal } from "../../components/confirmation-modal";
+import { useQuestionTableStore } from "@/stores/all-questions";
+
+const truncate = (s: string, n = 80) => {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+};
+
+interface QuestionsCardProps {
+  q: IDetailedQuestion;
+  idx: number;
+  currentPage: number;
+  limit: number;
+  uploadedQuestionsCount: number;
+  isBulkUpload: boolean;
+  totalPages: number;
+  userRole: UserRole;
+  updatingQuestion: boolean;
+  setIsSelectionModeOn?: (val: boolean) => void;
+  isSelectionModeOn: boolean;
+  handleQuestionsSelection?: (questionId: string) => void;
+  isSelected?: boolean;
+  deletingQuestion: boolean;
+  setEditOpen: (val: boolean) => void;
+  setSelectedQuestion: (q: any) => void;
+  selectedQuestionIds?: string[];
+  setQuestionIdToDelete: (id: string) => void;
+  handleDelete: (questionId?: string) => Promise<void>;
+  setUpdatedData: React.Dispatch<
+    React.SetStateAction<IDetailedQuestion | null>
+  >;
+
+  updateQuestion: (
+    mode: "add" | "edit",
+    entityId?: string,
+    flagReason?: string,
+    status?: QuestionStatus,
+  ) => Promise<void>;
+  onViewMore: (id: string) => void;
+  showClosedAt?: boolean;
+}
+
+const QuestionsCard: React.FC<QuestionsCardProps> = ({
+  q,
+  idx,
+  currentPage,
+  limit,
+  userRole,
+  uploadedQuestionsCount,
+  isBulkUpload,
+  deletingQuestion,
+  setEditOpen,
+  setSelectedQuestion,
+  handleDelete,
+  onViewMore,
+  setIsSelectionModeOn,
+  isSelectionModeOn,
+  isSelected,
+  handleQuestionsSelection,
+  selectedQuestionIds,
+  showClosedAt,
+}) => {
+  const visibleColumns = useQuestionTableStore((state) => state.visibleColumns);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const { data: currentUser } = useGetCurrentUser();
+  const isAssignedToMe =
+    !!q.moderatorId &&
+    !!currentUser?._id &&
+    q.moderatorId === currentUser._id;
+
+  // Get correct timer start time based on user role (Author vs Level Expert)
+  const timerStartTime = getTimerStartTime(q);
+
+  const { timer, isClickable } = useQuestionClickability(
+    q.source,
+    timerStartTime,
+    uploadedQuestionsCount,
+    userRole,
+    isBulkUpload,
+    buildHoldCountdownOptions(q)
+  );
+
+  const statusBadge = useMemo(() => {
+    // const status = q.status || "NIL";
+    const effectiveStatus =
+      timer === "00:00:00" && q.status == "open"&&q.pae_review!=true
+        ? "delayed"
+        : q.status || "NIL";
+
+    const formatted = effectiveStatus.replace("_", " ");
+
+    const colorClass =
+      effectiveStatus === "in-review"
+        ? "bg-green-500/10 text-green-600 border-green-500/30"
+        : effectiveStatus === "open"
+          ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+          : effectiveStatus === "closed"
+            ? "bg-gray-500/10 text-gray-600 border-gray-500/30"
+            : effectiveStatus === "pae_submitted"
+              ? "bg-amber-600/10 text-amber-700 border-amber-600/30"
+              : "bg-muted text-foreground";
+
+    return (
+      <Badge variant="outline" className={colorClass}>
+        {formatted}
+      </Badge>
+    );
+  }, [q.status, timer]);
+
+  const priorityBadge = useMemo(() => {
+    if (!q.priority) {
+      return (
+        <Badge variant="outline" className="text-muted-foreground">
+          NIL
+        </Badge>
+      );
+    }
+
+    const colorClass =
+      q.priority === "critical"
+        ? "bg-red-600/10 text-red-700 border-red-700/30 ring-1 ring-red-700/10 dark:bg-red-900/30 dark:text-red-300 dark:border-red-900 dark:ring-red-500/30"
+         :
+      q.priority === "high"
+        ? "bg-red-50 text-orange-600 border-orange-100 ring-1 ring-orange-500/10 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-900 dark:ring-orange-500/30"
+        : q.priority === "medium"
+          ? "bg-yellow-50 text-yellow-600 border-yellow-100 ring-1 ring-yellow-500/10 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-900 dark:ring-yellow-500/30"
+          : "bg-green-50 text-green-600 border-green-100 ring-1 ring-green-500/10 dark:bg-green-900/30 dark:text-green-300 dark:border-green-900 dark:ring-green-500/30";
+
+    return (
+      <span
+        className={`w-fit px-2 py-0.5 rounded text-xs font-semibold ${colorClass}`}
+      >
+        {q.priority.charAt(0).toUpperCase() + q.priority.slice(1)}
+      </span>
+    );
+  }, [q.priority]);
+
+  const hasSelectedQuestions = !!selectedQuestionIds?.length;
+  const showCreatedColumn = !showClosedAt && visibleColumns.created;
+  const showClosedColumn = !!showClosedAt && visibleColumns.closed;
+  const showDetailsSection =
+    visibleColumns.priority ||
+    visibleColumns.review_level ||
+    visibleColumns.state ||
+    visibleColumns.crop ||
+    visibleColumns.domain ||
+    visibleColumns.source ||
+    showCreatedColumn ||
+    showClosedColumn;
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!q._id) return;
+    if (!isSelectionModeOn) {
+      setIsSelectionModeOn?.(true);
+      // Automatically select the card that was right-clicked
+      if (!isSelected) handleQuestionsSelection?.(q._id);
+    }
+  };
+
+  const hoverClasses = userRole === 'expert'
+    ? "hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+    : "hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400";
+
+  const isDuplicate = Boolean(
+    q?.similarityScore &&
+    q?.referenceQuestionId &&
+    q?.referenceQuestion &&
+    q?.referenceSource
+  );
+  return (
+    <div
+      onContextMenu={handleContextMenu}
+      onClick={() => {
+        if (isSelectionModeOn || hasSelectedQuestions) {
+          handleQuestionsSelection?.(q._id ?? "");
+          return;
+        }
+        if (!isClickable) return;
+        onViewMore(q._id?.toString() ?? "");
+      }}
+      className={`
+        group relative w-full rounded-2xl border transition-all duration-300 ease-in-out cursor-pointer overflow-hidden
+        ${isSelected
+          ? "border-green-500 ring-2 ring-green-500/20 shadow-md bg-green-50/10 dark:bg-green-900/20 dark:ring-green-400/30"
+          : isAssignedToMe
+            ? "border-purple-400 ring-2 ring-purple-400/25 bg-purple-50/40 dark:bg-purple-900/20 dark:border-purple-500 hover:shadow-lg"
+            : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600 hover:shadow-lg dark:hover:shadow-gray-900/50"
+        }
+      `}
+    >
+      {/* Checkbox Overlay (Visible on Selection Mode) */}
+      <div
+        className={`
+        absolute top-4 left-4 z-20 transition-all duration-200
+        ${isSelectionModeOn ? "opacity-100 scale-100" : "opacity-0 scale-90 pointer-events-none"}
+      `}
+      >
+        <div
+          className={`
+          w-5 h-5 rounded border flex items-center justify-center transition-colors
+          ${isSelected ? "bg-green-600 border-green-600" : "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-500"}
+        `}
+        >
+          {isSelected && <CheckSquare size={14} className="text-white" />}
+        </div>
+      </div>
+
+      <div
+        className={`p-5 space-y-4 ${isSelectionModeOn ? "pl-12" : ""} transition-all duration-300`}
+      >
+        {(visibleColumns.sl_No || visibleColumns.status) && (
+        <div className="flex justify-between items-start">
+          {visibleColumns.sl_No && (
+          <span className="text-sm font-medium text-gray-400 font-mono dark:text-gray-500">
+            #{(currentPage - 1) * limit + idx + 1}
+          </span>
+            )}
+            <div className={`flex items-center gap-1.5 ${!visibleColumns.sl_No ? "ml-auto" : ""}`}>
+              {q.pae_review && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-purple-500/10 text-purple-600 border-purple-500/30 dark:text-purple-400 dark:border-purple-500/30 whitespace-nowrap">
+                  PAE
+                </span>
+              )}
+              {isAssignedToMe && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-purple-600/10 text-purple-700 border-purple-500/30 dark:text-purple-300 dark:border-purple-500/30 whitespace-nowrap">
+                  Assigned to you
+                </span>
+              )}
+              {visibleColumns.status && statusBadge}
+            </div>
+          </div>
+        )}
+
+        {visibleColumns.question && (
+        <div className="flex flex-col h-[5.75rem] justify-between">
+          <div className="h-6 flex items-start">
+            {isDuplicate && (
+              <Badge
+                variant="outline"
+                className="bg-red-500/10 text-red-600 border-red-500/30"
+              >
+                Duplicate
+              </Badge>
+            )}
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 leading-snug group-hover:text-green-700 transition-colors line-clamp-2 dark:text-gray-100 dark:group-hover:text-green-400" title={q.question}>
+            {truncate(q.question, 80)}
+          </h3>
+          <div className="mt-1 h-5 flex items-center">
+            {q.status !== "pass" && (
+              <TimerDisplay timer={timer} status={q.status} source={q.source} />
+            )}
+            </div>
+          </div>
+        )}
+
+        {showDetailsSection && (
+        <div className="grid grid-cols-2 gap-y-4 gap-x-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+          {/* Priority */}
+          {visibleColumns.priority && (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                Priority
+              </span>
+              {priorityBadge}
+            </div>
+          )}
+
+          {visibleColumns.review_level && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-400 uppercase dark:text-gray-500 tracking-wider">
+              Review Level
+            </span>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <User size={14} className="text-gray-400 dark:text-gray-500" />
+              {q.review_level_number}
+            </div>
+          </div>
+            )}
+
+          {visibleColumns.state && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+              State
+            </span>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <MapPin size={14} className="text-gray-400 dark:text-gray-500" />
+              <span className="truncate max-w-[150px]" title={q.details.state}>
+                {q.details.state}
+              </span>
+            </div>
+          </div>
+            )}
+
+          {visibleColumns.crop && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+              Crop
+            </span>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Sprout
+                size={14}
+                className="text-green-500 dark:text-green-400" 
+              />
+              <span className="truncate max-w-[150px]">{q.details.crop}</span>
+            </div>
+          </div>
+            )}
+
+            {visibleColumns.domain && (
+              <div className="truncate flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+                  Domain
+                </span>
+                <span className="truncate max-w-[150px] text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {(Array.isArray(q.details?.domain)
+                    ? q.details.domain
+                    : typeof q.details?.domain === "string" && q.details.domain.trim()
+                      ? [q.details.domain]
+                      : []
+                  ).length > 0
+                  ? (Array.isArray(q.details?.domain)
+                    ? q.details.domain
+                    : [q.details.domain]
+                  )
+                    .map((item) =>
+                      item.length > 12 ? `${item.substring(0, 12)}...` : item
+                    )
+                    .join(", ")
+                  : "NIL"}
+                </span>
+              </div>
+            )}
+
+            {visibleColumns.source && (
+          <div className="truncate flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+              Source
+            </span>
+            <span className="truncate max-w-[150px] inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300">
+              {q.source}
+            </span>
+          </div>
+            )}
+
+          {showCreatedColumn && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+              Created
+            </span>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <Calendar
+                size={14}
+                className="text-gray-400 dark:text-gray-500"
+              />
+              {formatDate(new Date(q.createdAt!))}
+            </div>
+          </div>
+            )}
+
+            {showClosedColumn && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider dark:text-gray-500">
+                  Closed
+                </span>
+                <div className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <Calendar size={14} className="text-gray-400 dark:text-gray-500" />
+                  {q.closedAt ? formatDate(new Date(q.closedAt), false) : "N/C"}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className={`px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center dark:bg-background/50 dark:border-gray-700 ${visibleColumns.answers ? "justify-between" : "justify-end"}`}>
+        {visibleColumns.answers && (
+        <div className="flex items-center gap-2 text-gray-500 text-sm dark:text-gray-400">
+          <MessageCircle size={16} />
+          <span className="font-medium">{q.totalAnswersCount} Answers</span>
+        </div>
+        )}
+        <div className="flex gap-2 animate-in fade-in duration-200">
+          {isSelectionModeOn && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewMore(q._id!);
+              }}
+              className="p-1.5 rounded-full hover:bg-red-50 text-gray-400 hover:text-green-600 transition-colors"
+              title="View Question"
+            >
+              <Eye size={18} />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedQuestion(q);
+              setEditOpen(true);
+            }}
+            className={`p-1.5 rounded-full transition-colors text-gray-400 dark:text-gray-500 ${hoverClasses}`}
+            title={`${userRole === "expert" ? "Raise Flag" : "Edit Question"}`}
+          >
+            {userRole === "expert" ? 
+            <AlertCircle size={18} />
+             : <Edit size={18} />}
+          </button>
+          {userRole !== "expert" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsDeleteOpen(true);
+              }}
+              className="p-1.5 rounded-full dark:hover:bg-red-900/30 dark:text-gray-500 dark:hover:text-red-400 hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"
+              title="Delete Question"
+            >
+              <Trash2 size={18} />
+            </button>
+          )}
+        </div>
+        <ConfirmationModal
+          title="Delete Question Permanently?"
+          description="Are you sure you want to delete this question?"
+          confirmText="Delete"
+          cancelText="Cancel"
+          isLoading={deletingQuestion}
+          type="delete"
+          open={isDeleteOpen}
+          onOpenChange={setIsDeleteOpen}
+          onConfirm={() => {
+            handleDelete(q._id!);
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
+export default React.memo(QuestionsCard);

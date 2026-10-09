@@ -1,0 +1,222 @@
+"use client";
+
+import * as React from "react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
+import { Button } from "./button";
+import { Avatar, AvatarImage, AvatarFallback } from "./avatar";
+import { useAuthStore } from "@/stores/auth-store";
+import { CheckCheck, LogOut, NotepadText, User } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { useGetCurrentUser } from "@/hooks/api/user/useGetCurrentUser";
+import { isCoordinatorRole } from "@/lib/roles";
+import { Badge } from "./badge";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./alert-dialog";
+
+export const UserProfileActions = () => {
+  const { user, logout, clearUser } = useAuthStore();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await logout();
+    clearUser();
+    navigate({ to: "/auth" });
+  };
+
+  return <UserDropdown user={user} onLogout={handleLogout} />;
+};
+
+interface UserData {
+  email: string;
+  name: string;
+  avatar?: string;
+}
+
+interface UserDropdownProps {
+  user: UserData | null;
+  onLogout: () => void;
+}
+
+export function UserDropdown({ user, onLogout }: UserDropdownProps) {
+  const [imgError, setImgError] = React.useState(false);
+  const navigate = useNavigate();
+  const { data: userWithRole } = useGetCurrentUser({});
+  const isCoordinator = isCoordinatorRole(userWithRole?.role);
+  const handleLogout = () => {
+    const clearPlaygroundTabs = () => {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith("playground_active_tab")) {
+          localStorage.removeItem(key);
+        }
+      });
+    };
+    clearPlaygroundTabs();
+    onLogout();
+  };
+  if (!user) return;
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((word) => word.charAt(0))
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleViewProfile = () => {
+    navigate({ to: isCoordinator ? "/coordinator/profile" : "/profile" });
+  };
+
+  const handleViewAudit = () => {
+    navigate({ to: "/audit" });
+  };
+
+  const handleViewHistory = () => {
+    navigate({ to: "/history" });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+          <Avatar className="h-9 w-9">
+            <AvatarImage
+              src={user.avatar || "/placeholder.svg"}
+              alt={user.name}
+            />
+            <AvatarFallback className="bg-green-100 text-green-700">
+              {getInitials(user.name)}
+            </AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        className="w-64  shadow-2xl border-2"
+        align="end"
+        forceMount
+      >
+        <div className="flex items-center space-x-3 p-3">
+          {user.avatar && !imgError ? (
+            <img
+              src={user.avatar}
+              alt={user.name || "User"}
+              className="h-8 w-8 rounded"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div className="h-8 w-8 flex items-center justify-center rounded bg-gray-300 text-xs font-semibold text-gray-700">
+              {getInitials(user.name)}
+            </div>
+          )}
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">{user.name}</p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user.email}
+            </p>
+          </div>
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={handleViewProfile}
+          className="text-foreground focus:text-foreground cursor-pointer mb-2"
+        >
+          <User className="mr-2 h-4 w-4" />
+          {isCoordinator ? "Coordinator Profile" : "Profile"}
+        </DropdownMenuItem>
+
+        {(userWithRole?.role === "admin" ||
+          userWithRole?.role === "moderator" ||
+          userWithRole?.role === "tester") && (
+          <DropdownMenuItem
+            onClick={handleViewAudit}
+            className="text-foreground focus:text-foreground cursor-pointer mb-2 relative"
+          >
+            <CheckCheck className="mr-2 h-4 w-4" />
+            View Audit
+            <Badge
+              variant="default"
+              className="absolute -top-1 right-2 h-4 text-[9px] px-1.5 py-0 bg-red-500 text-white hover:bg-red-600 border-0 font-medium shadow-sm"
+            >
+              New
+            </Badge>
+          </DropdownMenuItem>
+        )}
+
+        {!isCoordinator && (
+        <DropdownMenuItem
+          onClick={handleViewHistory}
+          className="text-foreground focus:text-foreground cursor-pointer mb-2 relative"
+        >
+          <NotepadText className="mr-2 h-4 w-4" />
+          History
+          <Badge
+            variant="default"
+            className="absolute -top-1 right-2 h-4 text-[9px] px-1.5 py-0 bg-red-500 text-white hover:bg-red-600 border-0 font-medium shadow-sm"
+          >
+            New
+          </Badge>
+        </DropdownMenuItem>
+        )}
+
+        {/* <DropdownMenuItem
+          onClick={handleLogout}
+          className="text-red-600 focus:text-red-600 cursor-pointer"
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </DropdownMenuItem> */}
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <DropdownMenuItem
+              onSelect={(e) => e.preventDefault()}
+              className="text-red-600 focus:text-red-600 cursor-pointer"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </DropdownMenuItem>
+          </AlertDialogTrigger>
+
+          <AlertDialogContent className="sm:max-w-md rounded-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Are you sure you want to log out?
+              </AlertDialogTitle>
+
+              <AlertDialogDescription>
+                You will need to log in again to access your account.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+
+              <AlertDialogAction
+                onClick={handleLogout}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Logout
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

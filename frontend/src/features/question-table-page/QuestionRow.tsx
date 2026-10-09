@@ -1,0 +1,600 @@
+import type { IDetailedQuestion, QuestionPriority, QuestionStatus, UserRole } from "@/types";
+import { useMemo } from "react";
+import { buildHoldCountdownOptions } from "@/hooks/ui/useCountdown";
+import { useQuestionClickability } from "@/hooks/ui/useQuestionClickability";
+import { Badge } from "../../components/atoms/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "../../components/atoms/context-menu";
+import { TableCell, TableRow } from "../../components/atoms/table";
+import { Checkbox } from "../../components/atoms/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/atoms/tooltip";
+import { TimerDisplay } from "../../components/timer-display";
+import { formatDate } from "@/utils/formatDate";
+import { getTimerStartTime } from "@/utils/getTimerStartTime";
+import { AlertCircle, AlertTriangle, BadgeCheck, CheckCircle, Circle, Clock, Edit, Eye, Square, Trash, User, XCircle,ChevronDown } from "lucide-react";
+import { toast } from "sonner";
+import { ConfirmationModal } from "../../components/confirmation-modal";
+import { useQuestionTableStore } from "@/stores/all-questions";
+import { useQuestionTimer } from "@/hooks/ui/useQuestionTimer";
+
+interface QuestionRowProps {
+  q: IDetailedQuestion;
+  idx: number;
+  currentPage: number;
+  limit: number;
+  uploadedQuestionsCount: number;
+  isBulkUpload: boolean;
+  totalPages: number;
+  userRole: UserRole;
+  updatingQuestion: boolean;
+  setIsSelectionModeOn?: (val: boolean) => void;
+  handleQuestionsSelection?: (questionId: string) => void;
+  isSelected?: boolean;
+  deletingQuestion: boolean;
+  setEditOpen: (val: boolean) => void;
+  setSelectedQuestion: (q: any) => void;
+  selectedQuestionIds?: string[];
+  setQuestionIdToDelete: (id: string) => void;
+  handleDelete: (questionId?: string) => Promise<void>;
+  setUpdatedData: React.Dispatch<
+    React.SetStateAction<IDetailedQuestion | null>
+  >;
+
+  updateQuestion: (
+    mode: "add" | "edit",
+    entityId?: string,
+    flagReason?: string,
+    status?: QuestionStatus,
+  ) => Promise<void>;
+  onViewMore: (id: string) => void;
+  showClosedAt?: boolean;
+  isLoading?: boolean;
+  isDedicatedView?: boolean;
+}
+const truncate = (s: string, n = 80) => {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+};
+
+export const QuestionRow: React.FC<QuestionRowProps> = ({
+  q,
+  idx,
+  currentPage,
+  limit,
+  userRole,
+  updatingQuestion,
+  uploadedQuestionsCount,
+  isBulkUpload,
+  deletingQuestion,
+  setEditOpen,
+  setSelectedQuestion,
+  handleDelete,
+  onViewMore,
+  setIsSelectionModeOn,
+  isSelected,
+  handleQuestionsSelection,
+  selectedQuestionIds,
+  showClosedAt,
+  isLoading,
+  isDedicatedView,
+}) => {
+  //visible columns
+  const visibleColumns = useQuestionTableStore((state) => state.visibleColumns);
+  // To track cont
+
+  // Get correct timer start time based on user role (Author vs Level Expert)
+  const timerStartTime = getTimerStartTime(q);
+  
+  // const { timer } = useQuestionTimer(
+  //     q.source,
+  //     timerStartTime,
+  //     buildHoldCountdownOptions(q)
+  //   )
+
+  const { timer, isClickable, delayMinutes } = useQuestionClickability(
+    q.source,
+    timerStartTime,
+    uploadedQuestionsCount,
+    userRole,
+    isBulkUpload,
+    buildHoldCountdownOptions(q)
+  );
+
+  // const priorityBadge = useMemo(() => {
+  //   if (!q.priority)
+  //     return (
+  //       <Badge variant="outline" className="text-muted-foreground">
+  //         NIL
+  //       </Badge>
+  //     );
+
+  //   const colorClass =
+  //     q.priority === "high"
+  //       ? "bg-red-500/10 text-red-600 border-red-500/30"
+  //       : q.priority === "medium"
+  //         ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30"
+  //         : "bg-green-500/10 text-green-600 border-green-500/30";
+
+  //   return (
+  //     <Badge variant="outline" className={colorClass}>
+  //       {q.priority.charAt(0).toUpperCase() + q.priority.slice(1)}
+  //     </Badge>
+  //   );
+  // }, [q.priority]);
+
+  const PRIORITY_CONFIG = {
+    critical: {
+      label: "Crit",
+      className: "bg-red-600/10 text-red-700 border-red-700/30",
+    },
+    high: {
+      label: "High",
+      className: "bg-orange-500/10 text-orange-600 border-orange-500/30",
+    },
+    medium: {
+      label: "Med",
+      className: "bg-yellow-500/10 text-yellow-600 border-yellow-500/30",
+    },
+    low: {
+      label: "Low",
+      className: "bg-green-500/10 text-green-600 border-green-500/30",
+    },
+  } as const;
+  const PriorityBadge = ({ priority }: { priority?: QuestionPriority }) => {
+    if (!priority)
+      return (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border text-muted-foreground">
+          NIL
+        </span>
+      );
+
+    const cfg = PRIORITY_CONFIG[priority as keyof typeof PRIORITY_CONFIG];
+    if (!cfg) return null;
+
+    return (
+      <span
+        className={`inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${cfg.className}`}
+      >
+        {cfg.label}
+      </span>
+    );
+  };
+
+  const STATUS_CONFIG = {
+    "in-review": {
+      icon: User,
+      className: "bg-green-500/10 text-green-600 border-green-500/30",
+    },
+    open: {
+      icon: Clock,
+      className: "bg-amber-500/10 text-amber-600 border-amber-500/30",
+    },
+    closed: {
+      icon: BadgeCheck,
+      className: "bg-gray-500/10 text-gray-600 border-gray-500/30",
+    },
+    delayed: {
+      icon: AlertTriangle,
+      className: "bg-orange-500/10 text-orange-600 border-orange-500/30",
+    },
+    pae_submitted: {
+      icon: Clock,
+      className: "bg-amber-600/10 text-amber-700 border-amber-600/30",
+    },
+  } as const;
+  const statusBadge = useMemo(() => {
+    // const status = q.status || "NIL";
+    const effectiveStatus =
+      timer === "00:00:00" && q.status == "open"&&q.pae_review!=true
+        ? "delayed"
+        : q.status || "NIL";
+
+    const formatted = effectiveStatus.replace("_", " ");
+    const config = STATUS_CONFIG[effectiveStatus as keyof typeof STATUS_CONFIG];
+    const Icon = config?.icon ?? Circle;
+
+    const colorClass =
+      effectiveStatus === "in-review"
+        ? "bg-green-500/10 text-green-600 border-green-500/30"
+        : effectiveStatus === "open"
+          ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+          : effectiveStatus === "closed"
+            ? "bg-gray-500/10 text-gray-600 border-gray-500/30"
+            : effectiveStatus === "delayed"
+              ? "bg-orange-500/10 text-orange-600 border-orange-500/30"
+              : effectiveStatus === "pae_submitted"
+                ? "bg-amber-600/10 text-amber-700 border-amber-600/30"
+                : "bg-muted text-foreground";
+
+    return (
+      <Badge variant="outline" className={`gap-1.5 ${colorClass}`}>
+        <Icon size={11} strokeWidth={2.2} />
+        {formatted}
+      </Badge>
+    );
+  }, [q.status, timer]);
+
+  const hasSelectedQuestions =
+    selectedQuestionIds && selectedQuestionIds.length > 0;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild >
+        <TableRow 
+          key={q._id}
+          className={`text-center transition-all duration-300 ease-out 
+              ${isSelected ? "bg-primary/10" : "hover:bg-muted/50"}
+              ${isLoading ? "opacity-50 pointer-events-none" : "hover:shadow-sm hover:scale-[1.01] hover:brightness-[1.02]"}
+            `}
+
+          
+          onClick={() => {
+            if (!q._id || !hasSelectedQuestions) return;
+            handleQuestionsSelection?.(q._id);
+          }}
+        >
+        
+          {/* Serial Number */}
+          {visibleColumns.sl_No && (
+            // <div className={`border-l-4 rounded-lg ${q.source === "AJRASAKHA" ? "border-blue-500" : q.source === "WHATSAPP" ? "border-green-500" : q.source === "OUTREACH" ? "border-orange-500" : q.source === "AGRI_EXPERT" ? "border-gray-500" : "border-yellow-500"} `}>
+            <TableCell
+              className="align-middle text-center p-4"
+              title={idx.toString()}
+            >
+            
+              {hasSelectedQuestions ? (
+                <Checkbox
+                  checked={q._id ? selectedQuestionIds.includes(q._id) : false}
+                  onCheckedChange={() => {
+                    if (!q._id) return;
+                    handleQuestionsSelection?.(q._id);
+                  }}
+                />
+              ) : (
+                (currentPage - 1) * limit + idx + 1
+              )}
+            </TableCell>
+            // </div>
+          )}
+
+          {/* Question Text */}
+          {/* {visibleColumns.question && (
+            <TableCell className="text-start ps-3 " title={q.question}>
+              <div className="flex flex-col gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={`cursor-pointer ${isClickable
+                          ? hasSelectedQuestions
+                            ? ""
+                            : "hover:underline"
+                          : "opacity-50 cursor-not-allowed"
+                          }`}
+                        onClick={() => {
+                          if (!isClickable || hasSelectedQuestions) return;
+                          onViewMore(q._id?.toString() || "");
+                        }}
+                      >
+                        {truncate(q.question, 50)}
+                      </span>
+                    </TooltipTrigger>
+                    {!isClickable && (
+                      <TooltipContent side="top">
+                        <p>
+                          The question is currently being processed. Expert
+                          allocation is underway and may take{" "}
+                          {delayMinutes < 1
+                            ? "less than 1 minute"
+                            : `up to ${Math.ceil(delayMinutes)} ${Math.ceil(delayMinutes) === 1
+                              ? "minute"
+                              : "minutes"
+                            }`}{" "}
+                          to complete.
+                        </p>
+                      </TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+                {q.status !== "delayed" && (
+                  // <TimerDisplay timer={timer} status={q.status} />
+                  <TimerDisplay
+                    timer={timer}
+                    status={q.status}
+                    source={q.source}
+                  />
+                )}
+              </div>
+            </TableCell>
+          )} */}
+
+          {/* Priority */}
+          {/* {visibleColumns.priority && (
+            <TableCell className="align-middle text-center">
+              {priorityBadge}
+            </TableCell>
+          )} */}
+
+
+          {visibleColumns.question && (
+          <TableCell className="text-start ps-0">
+            <div className="flex items-center gap-2">
+              {visibleColumns.priority && <PriorityBadge priority={q.priority} />}
+              {isDedicatedView && q.source && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border bg-blue-500/10 text-blue-600 border-blue-500/30 whitespace-nowrap">
+                  {q.source === "AGRI_EXPERT" ? "Manual" : q.source}
+                </span>
+              )}
+              {q.pae_review && (
+                <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-purple-500/10 text-purple-600 border-purple-500/30 whitespace-nowrap">
+                  PAE
+                </span>
+              )}
+
+              <div className="flex flex-col gap-1 py-1">
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                         className={`cursor-pointer ${isClickable
+                          ? hasSelectedQuestions
+                            ? ""
+                            : "hover:underline"
+                          : "opacity-50 cursor-not-allowed"
+                          }`}
+                        onClick={() => {
+                          if (!isClickable || hasSelectedQuestions) return;
+                          onViewMore(q._id?.toString() || "");
+                        }}
+                      >
+                        {
+                        q?.similarityScore&&
+                        q?.referenceQuestionId&&
+                        q?.referenceQuestion&&
+                        q?.referenceSource&&
+                        (
+                          <span className='text-xs text-red-600 mr-1'>(DUPLICATE)</span>
+                        )
+                        }
+                        {truncate(q.question, 50)}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      align="start"
+                      sideOffset={6}
+                      className="max-w-md whitespace-pre-wrap break-words text-sm leading-snug"
+                    >
+                      {q.question}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {q.status !== "delayed" && q.status !== "pass" && (
+                  <TimerDisplay timer={timer} status={q.status} source={q.source} showDays={true} />
+                )}
+              </div>
+            </div>
+          </TableCell>
+          )}
+
+
+
+
+          {/* Details */}
+          {visibleColumns.state && (
+            <TableCell className="align-middle">
+              {" "}
+              {truncate(q.details.state, 17)}
+            </TableCell>
+          )}
+
+          {visibleColumns.crop && (
+            <TableCell className="align-middle">
+            {truncate(
+              (q.details.normalised_crop || q.details.crop || "")
+                .replace(/\b\w/g, char => char.toUpperCase()),
+              10
+            )}
+          </TableCell>
+          )}
+          {visibleColumns.domain && (
+            <TableCell className="align-middle">
+              {(() => {
+                // 1. Safely extract the domains
+                const domains = Array.isArray(q.details.domain)
+                  ? q.details.domain
+                  : typeof q.details.domain === "string" && q?.details?.domain
+                    ? [q.details.domain]
+                    : [];
+
+                // 2. Fallback if empty
+                if (domains.length === 0) {
+                  return <span className="text-muted-foreground text-sm">N/A</span>;
+                }
+
+                return (
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {/* The badges act as the trigger */}
+                        <div className="flex w-max items-center gap-1.5 cursor-default">
+                          <div className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-[oklch(0.2809_0_0)] dark:bg-[oklch(0.2_0_0)] dark:text-foreground">
+                            {truncate(domains[0], 22)}
+                          </div>
+                          {/* Count Badge: Shows +X if there are more domains */}
+                          {domains.length > 1 && (
+                            <div className="inline-flex h-6 items-center rounded-full border border-slate-200 bg-slate-100 px-2 text-[10px] font-bold text-slate-600 dark:border-[oklch(0.2809_0_0)] dark:bg-[oklch(0.2_0_0)] dark:text-foreground">
+                              +{domains.length - 1}
+                            </div>
+                          )}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" align="start" className="max-w-[300px] p-2 z-[100]">
+                        <div className="flex flex-col gap-1.5">
+                          {domains.map((domain, index) => (
+                            <span key={index} className="text-xs break-words">
+                              • {domain}
+                            </span>
+                          ))}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })()}
+            </TableCell>
+          )}
+
+          {/* Source */}
+          {/* {visibleColumns.source && (
+            <TableCell className="align-middle">
+              <Badge variant="outline">{q.source}</Badge>
+            </TableCell>
+          )} */}
+          {/* Status */}
+          {visibleColumns.status && (
+            <TableCell className="align-middle">{statusBadge}</TableCell>
+          )}
+
+          {/* Total Answers */}
+          {visibleColumns.answers && (
+            <TableCell className="align-middle">
+              {q.totalAnswersCount}
+            </TableCell>
+          )}
+          {visibleColumns.review_level && (
+            <TableCell className="align-middle">
+              {q.review_level_number?.toString() == "Author"
+                ? q.review_level_number
+                : `Level ${q.review_level_number}`}
+            </TableCell>
+          )}
+          {!showClosedAt && visibleColumns.created ? (
+            <TableCell className="align-middle">
+              {formatDate(new Date(q.createdAt!))}
+            </TableCell>
+          ) : null}
+          {showClosedAt && visibleColumns.closed ? (
+            <TableCell className="align-middle">
+              {q.closedAt ? formatDate(new Date(q.closedAt!)) : "N/C"}
+            </TableCell>
+          ) : null}
+         
+        </TableRow>
+      </ContextMenuTrigger>
+
+      {/* RIGHT CLICK MENU */}
+      <ContextMenuContent className="w-56 p-2">
+        {/* Selected Question Number */}
+        <div className="mb-2 px-2 py-1 rounded-md border border-transparent shadow-sm text-sm font-semibold ">
+          Question #{(currentPage - 1) * limit + idx + 1}
+        </div>
+        {userRole !== "expert" && userRole !== "tester" && !isSelected && (
+          <>
+            <ContextMenuSeparator />
+
+            <ContextMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                if (!q._id) return;
+
+                setIsSelectionModeOn?.(true);
+                handleQuestionsSelection?.(q._id);
+              }}
+            >
+              {/* <div className="flex h-4 w-4 items-center justify-center rounded border-2 border-primary/40 bg-primary/5 mr-2.5"> */}
+              <Square className="h-2.5 w-2.5 text-primary" />
+              {/* </div> */}
+              <span className=" ms-2">Select</span>
+            </ContextMenuItem>
+          </>
+        )}
+        {/* Actions */}
+        <ContextMenuItem onClick={() => onViewMore(q._id?.toString() || "")}>
+          <Eye className="w-4 h-4 mr-2 text-primary" />
+          View
+        </ContextMenuItem>
+
+        {userRole !== "tester" && (
+          <>
+            <ContextMenuSeparator />
+
+            {userRole === "expert" ? (
+              <ContextMenuItem
+                onSelect={(e) => {
+                  // SetTimeout is essential becuase it will resolve the UI Overlay conflicts happening due to edit modal being opened before closing the context menu
+                  setTimeout(() => {
+                    e.preventDefault();
+                    setSelectedQuestion(q);
+                    setEditOpen(true);
+                  }, 0);
+                }}
+              >
+                <AlertCircle className="w-4 h-4 mr-2 text-red-500" />
+                Raise Flag
+              </ContextMenuItem>
+            ) : (
+              <>
+                <ContextMenuItem
+                  // onSelect={(e) => {
+                  //   e.preventDefault();
+                  //   setSelectedQuestion(q);
+                  //   setEditOpen(true);
+                  // }}
+                  onSelect={(e) => {
+                    // SetTimeout is essential becuase it will resolve the UI Overlay conflicts happening due to edit modal being opened before closing the context menu
+                    setTimeout(() => {
+                      e.preventDefault();
+                      setSelectedQuestion(q);
+                      setEditOpen(true);
+                    }, 0);
+                  }}
+                >
+                  <Edit className="w-4 h-4 mr-2 text-blue-500" />
+                  {updatingQuestion ? "Editing..." : "Edit"}
+                </ContextMenuItem>
+
+                <ContextMenuSeparator />
+
+                <ContextMenuItem onSelect={(e) => e.preventDefault()}>
+                  <ConfirmationModal
+                    title="Delete Question Permanently?"
+                    description="Are you sure you want to delete this question? This action is irreversible."
+                    confirmText="Delete"
+                    cancelText="Cancel"
+                    isLoading={deletingQuestion}
+                    type="delete"
+                    onConfirm={() => {
+                      if (!q || !q._id) {
+                        toast.error("Question id not founded");
+                        return;
+                      }
+                      handleDelete(q._id!);
+                    }}
+                    trigger={
+                      <div className="flex items-center gap-2 ">
+                        <Trash className="w-4 h-4 text-red-600 mr-2" />
+                        {deletingQuestion ? "Deleting..." : "Delete"}
+                      </div>
+                    }
+                  />
+                </ContextMenuItem>
+              </>
+            )}
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+};

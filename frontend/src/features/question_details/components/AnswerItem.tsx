@@ -1,0 +1,412 @@
+// components/AnswerItem.tsx
+import { Card } from "@/components/atoms/card";
+import { useUpdateAnswer } from "@/hooks/api/answer/useUpdateAnswer";
+import { useGetComments } from "@/hooks/api/comment/useGetComments";
+import { useGetReRouteAllocation } from "@/hooks/api/question/useGetReRouteAllocation";
+import { useReRouteRejectQuestion } from "@/hooks/api/question/useReRouteRejectQuestion";
+import { useGetAllUsers } from "@/hooks/api/user/useGetAllUsers";
+import type {
+  IAnswer,
+  IRerouteHistoryResponse,
+  ISubmission,
+  ISubmissionHistory,
+  QuestionStatus,
+  ReRouteStatus,
+  SourceItem,
+  UserRole,
+} from "@/types";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { toast } from "sonner";
+import { AnswerItemHeader } from "./answer_item/AnswerItemHeader";
+import { AnswerContent } from "./answer_item/AnswerContent";
+import { AnswerActions } from "./answer_item/AnswerActions";
+import { CommentsSection } from "@/components/comments-section";
+import { useGetReRoutedQuestionFullData } from "@/hooks/api/question/useGetReRoutedQuestionFullData";
+
+interface AnswerItemProps {
+  answer: IAnswer;
+  currentUserId: string | undefined;
+  submissionData?: ISubmissionHistory;
+  questionId: string;
+  lastAnswerId: string;
+  firstAnswerId: string;
+  userRole: UserRole;
+  questionStatus: QuestionStatus;
+  queue: ISubmission["queue"];
+  rerouteQuestion?: IRerouteHistoryResponse[];
+  lastAnswerApprovalCount?: number;
+  paeReview?: boolean;
+  isDedicatedView?: boolean;
+  assignedModerator?: { name: string; email: string } | null;
+  isAssignedModerator?: boolean;
+}
+
+export const AnswerItem = forwardRef((props: AnswerItemProps, ref) => {
+  const [sources, setSources] = useState<SourceItem[]>(props.answer.sources);
+  const isMine = props.answer.authorId === props.currentUserId;
+
+  const LIMIT = 1;
+  const { refetch: refetchComments } = useGetComments(
+    LIMIT,
+    props.questionId,
+    props.answer._id
+  );
+
+  // need to refresh after action
+  const {
+    refetch: refechrerouteSelectedQuestion,
+  } = useGetReRoutedQuestionFullData(props.questionId);
+
+  const [editableAnswer, setEditableAnswer] = useState(props.answer.answer);
+  const [editOpen, setEditOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedExperts, setSelectedExperts] = useState<string[]>([]);
+  const [comment, setComment] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const isSubmittingAnswerRef = useRef(false);
+
+  // Edit-final-answer (admin/moderator) dialog state
+  const [editFinalOpen, setEditFinalOpen] = useState(false);
+  const [editFinalAnswer, setEditFinalAnswer] = useState(props.answer.answer);
+  const [editFinalSources, setEditFinalSources] = useState<SourceItem[]>(
+    props.answer.sources
+  );
+  const isEditingFinalRef = useRef(false);
+  const [isEditingFinal, setIsEditingFinal] = useState(false);
+
+  // Always re-seed the edit dialog with the latest answer/sources when it opens,
+  // so the moderator never sees a stale draft from a prior cancelled edit.
+  useEffect(() => {
+    if (editFinalOpen) {
+      setEditFinalAnswer(props.answer.answer);
+      setEditFinalSources(props.answer.sources);
+    }
+  }, [editFinalOpen, props.answer.answer, props.answer.sources]);
+
+  const { mutateAsync: updateAnswer, isPending: isUpdatingAnswer } =
+    useUpdateAnswer();
+
+  const { data: usersData, isLoading: isUsersLoading } = useGetAllUsers();
+  const { mutateAsync: allocateExpert, isPending: allocatingExperts } =
+    useGetReRouteAllocation();
+  const { rejectReRoute, isRejecting } = useReRouteRejectQuestion();
+
+  useImperativeHandle(ref, () => {
+    refetchComments;
+  });
+
+  const handleUpdateAnswer = async () => {
+    if (isSubmittingAnswerRef.current || isSubmittingAnswer || isUpdatingAnswer) {
+      return;
+    }
+
+    isSubmittingAnswerRef.current = true;
+    setIsSubmittingAnswer(true);
+
+    try {
+      if (!editableAnswer || editableAnswer.trim().length <= 3) {
+        toast.error("Updated answer should be at least more than 3 characters");
+        return;
+      }
+
+      if (sources.length <= 0) {
+        toast.error("Updated answer should contain atleast 1 source");
+        return;
+      }
+
+      const answerId = props.answer._id;
+
+      if (!answerId) {
+        toast.error("Answer ID not found. Cannot update.");
+        return;
+      }
+
+      await updateAnswer({
+        updatedAnswer: editableAnswer,
+        sources,
+        answerId,
+      });
+
+      toast.success(
+        "Answer approved successfully! The question is now closed. Thank you!"
+      );
+      setEditOpen(false);
+    } catch (error: any) {
+      console.error("Failed to edit answer:", error);
+      let errorMessage = error?.message || error?.msg || "Unknown error";
+      errorMessage = errorMessage.replace(/this answer:.+?,/, "this answer,");
+      toast.error(`Failed to Approve answer. ${errorMessage}`);
+      setEditOpen(false);
+    } finally {
+      setTimeout(() => {
+    isSubmittingAnswerRef.current = false;
+    setIsSubmittingAnswer(false);
+  }, 1000); // 1 second delay to prevent rapid submissions
+    }
+  };
+
+  const handleEditFinalAnswer = async () => {
+    if (isEditingFinalRef.current || isEditingFinal || isUpdatingAnswer) {
+      return;
+    }
+
+    isEditingFinalRef.current = true;
+    setIsEditingFinal(true);
+
+    try {
+      if (!editFinalAnswer || editFinalAnswer.trim().length <= 3) {
+        toast.error("Updated answer should be at least more than 3 characters");
+        return;
+      }
+
+      if (editFinalSources.length <= 0) {
+        toast.error("Updated answer should contain atleast 1 source");
+        return;
+      }
+
+      const answerId = props.answer._id;
+      if (!answerId) {
+        toast.error("Answer ID not found. Cannot update.");
+        return;
+      }
+
+      await updateAnswer({
+        updatedAnswer: editFinalAnswer,
+        sources: editFinalSources,
+        answerId,
+      });
+
+      toast.success("Final answer updated successfully.");
+      setEditFinalOpen(false);
+    } catch (error: any) {
+      console.error("Failed to edit final answer:", error);
+      const errorMessage = error?.message || error?.msg || "Unknown error";
+      toast.error(`Failed to update final answer. ${errorMessage}`);
+    } finally {
+      setTimeout(() => {
+        isEditingFinalRef.current = false;
+        setIsEditingFinal(false);
+      }, 1000);
+    }
+  };
+
+  const handleSelectExpert = (expertId: string) => {
+    setSelectedExperts((prev) =>
+      prev.includes(expertId)
+        ? prev.filter((id) => id !== expertId)
+        : [...prev, expertId]
+    );
+  };
+
+  const handleSubmit = async () => {
+    if (selectedExperts.length === 0) {
+      toast.error("Please select an expert.");
+      return;
+    }
+
+    if (!comment.trim()) {
+      toast.error("Comments are required.");
+      return;
+    }
+
+    try {
+      await allocateExpert({
+        questionId: props.questionId,
+        experts: selectedExperts[0],
+        moderatorId: props.currentUserId,
+        answerId: props.answer?._id,
+        comment: comment.trim(),
+        status: "pending" as ReRouteStatus,
+      });
+      setSelectedExperts([]);
+      refechrerouteSelectedQuestion();
+      toast.success("You have successfully Re Routed the question");
+    } catch (error: any) {
+      console.error("Error allocating experts:", error);
+      toast.error(
+        error?.message || "Failed to allocate experts. Please try again."
+      );
+    } finally {
+      setIsModalOpen(false);
+    }
+  };
+
+  const handleRejectReRouteAnswer = async (reason: string) => {
+    if (reason.trim() === "") {
+      toast.error("No reason provided for rejection");
+      return;
+    }
+    if (reason.length < 8) {
+      toast.error("Rejection reason must be atleast 8 letters");
+      return;
+    }
+    const rerouteQuestion = props.rerouteQuestion;
+
+    if (!rerouteQuestion || rerouteQuestion.length === 0) {
+      console.warn("No reroute question available");
+      return;
+    }
+
+    const lastReroutedTo = rerouteQuestion?.[0]?.reroutes?.length
+      ? rerouteQuestion[0].reroutes[rerouteQuestion[0].reroutes.length - 1]
+      : null;
+
+    if (!lastReroutedTo) {
+      console.warn("No reroute info found");
+      return;
+    }
+
+    const questionId = rerouteQuestion[0].questionId;
+    const rerouteId = rerouteQuestion[0]._id;
+    const moderatorId = lastReroutedTo.reroutedTo._id;
+    const userId = lastReroutedTo.reroutedTo._id;
+
+    try {
+      await rejectReRoute({
+        reason,
+        rerouteId: rerouteId,
+        questionId: questionId,
+        moderatorId: moderatorId,
+        expertId: userId,
+        role: "moderator",
+      });
+      refechrerouteSelectedQuestion();
+      toast.success("You have successfully rejected the Re Route Question");
+    } catch (error: any) {
+      console.error("Failed to reject reroute question:", error);
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Something went wrong";
+      toast.error(message);
+    } finally {
+      setIsRejectDialogOpen(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setSelectedExperts([]);
+    setIsModalOpen(false);
+  };
+
+  const isRejected =
+    props.submissionData && props.submissionData.status === "rejected";
+
+  const reroutedExpertIds =
+    props.rerouteQuestion?.flatMap((item) =>
+      item.reroutes.map((r) => r.reroutedTo._id)
+    ) ?? [];
+
+  const expertsIdsInQueue = new Set<string>([...reroutedExpertIds]);
+
+  const lastReroutedTo = props.rerouteQuestion?.[0]?.reroutes?.length
+    ? props.rerouteQuestion[0].reroutes[
+    props.rerouteQuestion[0].reroutes.length - 1
+    ]
+    : null;
+
+  const experts =
+    usersData?.users.filter((user) => user.role === "expert") || [];
+
+  const filteredExperts = experts.filter(
+    (expert) =>
+      expert.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      expert.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const reviews = props.answer.reviews ?? [];
+
+  let firstTrueIndex: number | undefined;
+  let firstFalseOrMissingIndex: number | undefined;
+
+  reviews.forEach((review, index) => {
+    if (review.reRoutedReview === true) {
+      if (firstTrueIndex === undefined) {
+        firstTrueIndex = index;
+      }
+    } else {
+      if (firstFalseOrMissingIndex === undefined) {
+        firstFalseOrMissingIndex = index;
+      }
+    }
+  });
+
+  return (
+    <Card className="p-6 grid gap-4">
+      <AnswerItemHeader
+        answer={props.answer}
+        isMine={isMine}
+        isRejected={isRejected}
+        submissionData={props.submissionData}
+        questionStatus={props.questionStatus}
+        lastAnswerId={props.lastAnswerId}
+        userRole={props.userRole}
+        editFinalOpen={editFinalOpen}
+        setEditFinalOpen={setEditFinalOpen}
+        editFinalAnswer={editFinalAnswer}
+        setEditFinalAnswer={setEditFinalAnswer}
+        editFinalSources={editFinalSources}
+        setEditFinalSources={setEditFinalSources}
+        isUpdatingFinalAnswer={isUpdatingAnswer || isEditingFinal}
+        handleEditFinalAnswer={handleEditFinalAnswer}
+      />
+
+      <AnswerActions
+        answer={props.answer}
+        userRole={props.userRole}
+        questionStatus={props.questionStatus}
+        lastAnswerId={props.lastAnswerId}
+        lastReroutedTo={lastReroutedTo}
+        editOpen={editOpen}
+        setEditOpen={setEditOpen}
+        editableAnswer={editableAnswer}
+        setEditableAnswer={setEditableAnswer}
+        sources={sources}
+        setSources={setSources}
+        isUpdatingAnswer={isUpdatingAnswer || isSubmittingAnswer}
+        handleUpdateAnswer={handleUpdateAnswer}
+        isModalOpen={isModalOpen}
+        setIsModalOpen={setIsModalOpen}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        comment={comment}
+        setComment={setComment}
+        isUsersLoading={isUsersLoading}
+        filteredExperts={filteredExperts}
+        selectedExperts={selectedExperts}
+        handleSelectExpert={handleSelectExpert}
+        isAllocatingExperts={allocatingExperts}
+        handleSubmit={handleSubmit}
+        handleCancel={handleCancel}
+        isRejectDialogOpen={isRejectDialogOpen}
+        setIsRejectDialogOpen={setIsRejectDialogOpen}
+        rejectionReason={rejectionReason}
+        setRejectionReason={setRejectionReason}
+        handleRejectReRouteAnswer={handleRejectReRouteAnswer}
+        isRejecting={isRejecting}
+        isRejected={isRejected}
+        submissionData={props.submissionData}
+        questionId={props.questionId}
+        reviews={reviews}
+        firstTrueIndex={firstTrueIndex}
+        firstFalseOrMissingIndex={firstFalseOrMissingIndex}
+        lastAnswerApprovalCount={props.lastAnswerApprovalCount}
+        paeReview={props.paeReview}
+        isDedicatedView={props.isDedicatedView}
+        assignedModerator={props.assignedModerator}
+        isAssignedModerator={props.isAssignedModerator}
+      />
+
+      <AnswerContent answer={props.answer} />
+
+      <CommentsSection
+        questionId={props.questionId}
+        answerId={props.answer._id!}
+        isMine={props.answer.authorId === props.currentUserId}
+      />
+    </Card>
+  );
+});

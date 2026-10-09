@@ -1,0 +1,90 @@
+import { resolveEnv } from "./runtime-env";
+
+// Add all .env keys here
+type EnvKey =
+  // Common
+  | "VITE_ENABLE_MOCKS"
+  | "VITE_API_BASE_URL"
+
+  // Firebase
+  | "VITE_FIREBASE_API_KEY"
+  | "VITE_FIREBASE_AUTH_DOMAIN"
+  | "VITE_FIREBASE_PROJECT_ID"
+  | "VITE_FIREBASE_STORAGE_BUCKET"
+  | "VITE_FIREBASE_MESSAGING_SENDER_ID"
+  | "VITE_FIREBASE_APP_ID"
+  | "VITE_FIREBASE_MEASUREMENT_ID"
+
+  // Sarvam keys
+  | "VITE_SARVAM_API_KEY"
+
+  // Internal API
+  | "VITE_INTERNAL_API_KEY"
+
+  // Notification
+  | "VITE_VAPID_PUBLIC_KEY"
+
+  // Plivo
+  | "VITE_PLIVO_ENDPOINT_USERNAME"
+  | "VITE_PLIVO_ENDPOINT_PASSWORD"
+  | "VITE_PLIVO_STREAM_URL"
+  // FAQ / POP processing servers
+  | "VITE_FAQ_API_URL"
+  | "VITE_POP_API_URL"
+
+  // Call Agent Management
+  | "VITE_CALL_AGENT_MANAGER_USER_IDS";
+
+/**
+ * Internal getter (single source of truth)
+ */
+function getEnv(key: EnvKey, required = true, fallback = ""): string {
+  try {
+    const value = resolveEnv(key, import.meta.env[key]);
+
+    if (!value && required) {
+      alert(`Missing required environment variable: ${key}`);
+    }
+
+    return value || fallback;
+  } catch (e) {
+    alert(`Missing required environment variable: ${key}`);
+    return fallback;
+  }
+}
+
+// Public env helpers (ONLY using defined EnvKey values)
+export const env = {
+  apiBaseUrl: () => getEnv("VITE_API_BASE_URL", true, "http://localhost:3000/api"),
+
+  enableMocks: () => getEnv("VITE_ENABLE_MOCKS", false, "false") === "true",
+
+  firebase: {
+    apiKey: () => getEnv("VITE_FIREBASE_API_KEY", true, "dummy-firebase-api-key"),
+    authDomain: () => getEnv("VITE_FIREBASE_AUTH_DOMAIN", true, "dummy-project.firebaseapp.com"),
+    projectId: () => getEnv("VITE_FIREBASE_PROJECT_ID", true, "dummy-project-id"),
+    storageBucket: () => getEnv("VITE_FIREBASE_STORAGE_BUCKET", true, "dummy-project.appspot.com"),
+    messagingSenderId: () => getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID", true, "000000000000"),
+    appId: () => getEnv("VITE_FIREBASE_APP_ID", true, "1:000000000000:web:dummy-app-id"),
+    measurementId: () => getEnv("VITE_FIREBASE_MEASUREMENT_ID", false, "G-DUMMY00000"),
+  },
+
+  sarvamApiKey: () => getEnv("VITE_SARVAM_API_KEY", true, "dummy-sarvam-api-key"),
+
+  vapidPublicKey: () => getEnv("VITE_VAPID_PUBLIC_KEY", true, "dummy-vapid-public-key"),
+
+  plivo: {
+    endpointUsername: () => getEnv("VITE_PLIVO_ENDPOINT_USERNAME", false, "dummy_endpoint_username"),
+    endpointPassword: () => getEnv("VITE_PLIVO_ENDPOINT_PASSWORD", false, "dummy_endpoint_password"),
+    streamUrl: () => getEnv("VITE_PLIVO_STREAM_URL", false, "wss://dummy-stream-url.plivo.com"),
+  },
+
+  internalApiKey: () => getEnv("VITE_INTERNAL_API_KEY", true, "dummy-internal-api-key"),
+  faqApiUrl: () => getEnv("VITE_FAQ_API_URL", false, "/api/faq"),
+  popApiUrl: () => getEnv("VITE_POP_API_URL", false, "/api/pop"),
+
+  callAgentManagerUserIds: () => {
+    const ids = getEnv("VITE_CALL_AGENT_MANAGER_USER_IDS", false, "");
+    return ids ? ids.split(",").map(id => id.trim()) : [];
+  },
+};

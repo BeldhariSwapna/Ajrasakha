@@ -1,0 +1,973 @@
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsInt,
+  Min,
+  IsMongoId,
+  IsArray,
+  IsNumber,
+  MinLength,
+  Max,
+  ValidateNested,
+  ArrayNotEmpty,
+  IsEmail,
+  IsIn,
+  IsBooleanString,
+  IsBoolean,
+} from 'class-validator';
+import { JSONSchema } from 'class-validator-jsonschema';
+import { ObjectId } from 'mongodb';
+import { IQuestionPriority, ICropRef, QuestionStatus, QuestionSource } from '#shared/interfaces/models.js';
+import { Type, Transform } from 'class-transformer';
+
+class AddQuestionBody {
+  @JSONSchema({
+    description: 'ID of the user asking the question',
+    example: '64adf92e9e7c3b1234567890',
+    type: 'string',
+  })
+  @IsNotEmpty()
+  @IsString()
+  userId: string | ObjectId;
+
+  @JSONSchema({
+    description: 'The question text',
+    example:
+      'What is the difference between supervised and unsupervised learning?',
+    type: 'string',
+  })
+  @IsNotEmpty()
+  @IsString()
+  question: string;
+
+  @JSONSchema({
+    description: 'Context (transcript)/ reference ',
+    example: 'example text',
+    type: 'string',
+  })
+  @IsNotEmpty()
+  @IsString()
+  context: string | ObjectId;
+}
+
+// class QuestionResponse {
+//   @JSONSchema({
+//     description: 'Unique question identifier',
+//     example: '64adf92e9e7c3b1234567890',
+//     type: 'string',
+//   })
+//   _id: string;
+
+//   @JSONSchema({
+//     description: 'The actual question text',
+//     example: 'Explain closures in JavaScript',
+//     type: 'string',
+//   })
+//   question: string;
+
+//   @JSONSchema({
+//     description: 'Total number of answers for the question',
+//     example: 3,
+//     type: 'integer',
+//   })
+//   @IsInt()
+//   @Min(0)
+//   totalAnwersCount: number;
+// }
+
+class QuestionIdParam {
+  @JSONSchema({
+    description: 'MongoDB ObjectId of the question',
+    example: '650e9c0f5f1b2c00sdf2f4d9e',
+    type: 'string',
+  })
+  @IsMongoId()
+  questionId: string;
+}
+class QuestionDetailsDto {
+  @IsString()
+  state!: string;
+
+  @IsString()
+  district!: string;
+
+  @IsNotEmpty()
+  crop!: string | ICropRef;
+
+  @IsString()
+  season!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  domain!: string[];
+
+  @IsOptional()
+  @IsString()
+  normalised_crop?: string;
+}
+
+
+/**
+* Reviewer Result
+*/
+export class ReviewerResponse {
+  @IsString()
+  id!: string;
+
+  @IsString()
+  question!: string;
+
+  @IsString()
+  answer!: string;
+
+  @IsString()
+  state!: string;
+
+  @IsString()
+  district!: string;
+
+  @IsString()
+  crop!: string;
+
+  @IsString()
+  season!: string;
+
+  @IsString()
+  domain!: string;
+
+  @IsNumber()
+  score!: number;
+}
+
+/**
+* Golden Dataset Result
+*/
+export class GoldenResponse {
+  @IsString()
+  question!: string;
+
+  @IsString()
+  answer!: string;
+
+  @IsString()
+  agri_specialist!: string;
+
+  @IsString()
+  crop!: string;
+
+  @IsString()
+  district!: string;
+
+  @IsString()
+  state!: string;
+
+  @IsString()
+  season!: string;
+
+  @IsNumber()
+  score!: number;
+}
+
+/**
+* POP (Package of Practices) Result
+*/
+export class PopResponse {
+  @IsString()
+  text!: string;
+
+  @IsNumber()
+  page_no!: number;
+
+  @IsString()
+  source!: string;
+
+  @IsArray()
+  headings!: string[];
+
+  @IsNumber()
+  score!: number;
+}
+
+/**
+* Final API Response Structure
+*/
+export class QuestionSearchResponse {
+  @IsArray()
+  reviewer!: ReviewerResponse[];
+
+  @IsArray()
+  golden!: GoldenResponse[];
+
+  @IsArray()
+  pop!: PopResponse[];
+}
+
+// class QuestionResponse {
+//   @IsString()
+//   id!: string;
+
+//   @IsString()
+//   text!: string;
+
+//   @IsString()
+//   priority?: string;
+
+//   @IsString()
+//   createdAt!: string;
+
+//   @IsString()
+//   updatedAt!: string;
+
+//   @IsNumber()
+//   totalAnwersCount!: number;
+
+//   @IsArray()
+//   @IsString({each: true})
+//   currentAnswers?: {answer: string; id: string; isFinalAnswer: boolean}[];
+// }
+
+class UpdatedBy {
+  @IsString()
+  _id!: string;
+
+  @IsString()
+  userName!: string;
+
+  // @IsString()
+  // email!: string;
+}
+
+class AnswerDetails {
+  @IsString()
+  _id!: string;
+
+  @IsString()
+  answer!: string;
+
+  @IsString()
+  approvalCount!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  sources!: string[];
+}
+
+class PreviousAllocationItem {
+  @IsString()
+  reviewerId!: string;
+
+  @IsString()
+  reasonForChange!: string;
+
+  @Type(() => Date)
+  createdAt!: Date;
+
+  @Type(() => Date)
+  updatedAt!: Date;
+}
+
+class HistoryItem {
+  @ValidateNested()
+  @Type(() => UpdatedBy)
+  updatedBy!: UpdatedBy;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AnswerDetails)
+  answer?: AnswerDetails;
+
+  @IsOptional()
+  @IsEnum(['approved', 'rejected', 'in-review', 'reviewed'])
+  status?: 'approved' | 'rejected' | 'in-review' | 'reviewed';
+
+  @IsOptional()
+  @IsString()
+  reasonForRejection?: string;
+
+  @IsOptional()
+  @IsString()
+  approvedAnswer?: string;
+
+  @IsOptional()
+  @IsString()
+  modifiedAnswer?: string;
+
+  @IsOptional()
+  @IsString()
+  reasonForLastModification?: string;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => PreviousAllocationItem)
+  previousAllocations?: PreviousAllocationItem[];
+
+  @Type(() => Date)
+  createdAt!: Date;
+
+  @Type(() => Date)
+  updatedAt!: Date;
+}
+
+class QuestionResponse {
+  @IsString()
+  id!: string;
+
+  @IsString()
+  text!: string;
+
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high', 'critical'])
+  priority?: IQuestionPriority;
+
+  @IsString()
+  createdAt!: string;
+
+  @IsString()
+  updatedAt!: string;
+
+  @IsNumber()
+  totalAnswersCount!: number;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuestionDetailsDto)
+  details?: QuestionDetailsDto;
+
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @IsEnum([
+    'open',
+    'answered',
+    'closed',
+    'delayed',
+    're-routed',
+    'hold',
+    'pae_submitted',
+    'draft',
+    'pass',
+    'duplicate',
+    'non_agri',
+    'pending',
+  ])
+  status?: QuestionStatus;
+
+  @IsEnum(['AJRASAKHA', 'AGRI_EXPERT', "WHATSAPP", "OUTREACH"])
+  source!: QuestionSource;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => Object)
+  currentAnswers?: { answer: string; id: string; isFinalAnswer: boolean }[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HistoryItem)
+  history?: HistoryItem[];
+
+  @IsOptional()
+  @IsString()
+  aiInitialAnswer?: string;
+
+  @IsOptional()
+  @IsArray()
+  aiApprovedSources?: any[];
+
+  @IsOptional()
+  @IsString()
+  aiApprovedAnswer?: string;
+
+  @IsOptional()
+  isAutoAllocate?: boolean;
+}
+class ReferenceQuestionDetailDto {
+  @IsMongoId()
+  _id!: string;
+
+  @IsBoolean()
+  duplicate!: boolean;
+}
+
+class AddQuestionBodyDto {
+  @IsString()
+  @IsOptional()
+  question!: string;
+
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high', 'critical'])
+  priority!: 'low' | 'medium' | 'high' | 'critical';
+
+  @IsOptional()
+  @IsEnum(['AJRASAKHA', 'AGRI_EXPERT', 'WHATSAPP', 'OUTREACH'])
+  source!: QuestionSource;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => QuestionDetailsDto)
+  details?: QuestionDetailsDto;
+
+  @IsString()
+  @IsOptional()
+  context?: string;
+
+  @IsString()
+  @IsOptional()
+  aiInitialAnswer?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  isRequiredAiInitialAnswer?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  isOutreachQuestion?: string;
+
+  @IsOptional()
+  @IsIn(['expert', 'draft', 'pae_expert'])
+  allocationMode?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsMongoId()
+  paeExpertId?: string;
+
+  @IsString()
+  @IsOptional()
+  createdAt?: string;
+
+  @IsString()
+  @IsOptional()
+  originalquestion?: string;
+
+  @IsString()
+  @IsOptional()
+  messageId?: string;
+
+  @IsString()
+  @IsOptional()
+  threadId?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsMongoId()
+  userId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReferenceQuestionDetailDto)
+  referenceQuestionDetails?: ReferenceQuestionDetailDto[];
+
+  @IsString()
+  @IsOptional()
+  popContext?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tools_used?: string[];
+}
+
+class GenerateQuestionsBody {
+  @IsString()
+  @MinLength(10)
+  query!: string;
+
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  crop?: string;
+}
+class ExpertInput {
+  @IsString()
+  _id!: string;
+
+  @IsString()
+  userName!: string;
+}
+
+class AllocateExpertsRequest {
+  experts!: string[];
+}
+class BulkPaeAllocateRequest {
+  @IsArray()
+  @IsMongoId({ each: true })
+  questionIds!: string[];
+
+  @IsNotEmpty()
+  @IsMongoId()
+  paeExpertId!: string;
+}
+class RemoveAllocateBody {
+  @IsNumber()
+  index!: number;
+}
+class ReplaceQueueExpertRequest {
+  @IsNotEmpty()
+  @IsMongoId()
+  newExpertId!: string;
+
+  @IsNotEmpty()
+  @IsNumber()
+  @Min(0)
+  levelIndex!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isAuthor?: boolean;
+
+  @IsNotEmpty()
+  @IsString()
+  reasonForChange!: string;
+}
+class GeneratedQuestionResponse {
+  @IsString()
+  id!: string;
+
+  @IsString()
+  question!: string;
+
+  @IsString()
+  agri_specialist!: string;
+
+  @IsString()
+  answer!: string;
+
+  @IsString()
+  referenceSource!: string
+}
+
+class DateRangeRequest {
+  @JSONSchema({
+    description: 'Start date for filtering questions',
+    example: '2025-01-01',
+    type: 'string',
+    format: 'date',
+  })
+  @IsNotEmpty()
+  @IsString()
+  startDate!: string;
+
+  @JSONSchema({
+    description: 'End date for filtering questions',
+    example: '2025-01-31',
+    type: 'string',
+    format: 'date',
+  })
+  @IsNotEmpty()
+  @IsString()
+  endDate!: string;
+
+  @JSONSchema({
+    description: 'Array of recipient email addresses',
+    example: ['admin@example.com', 'manager@example.com'],
+    type: 'array',
+    items: { type: 'string', format: 'email' },
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsEmail({}, { each: true })
+  emails!: string[];
+}
+
+class GetDetailedQuestionsQuery {
+  @JSONSchema({ description: 'Search term', example: 'wheat', type: 'string' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @JSONSchema({ description: 'Level sort', example: 'asc', type: 'string' })
+  @IsOptional()
+  @IsString()
+  sort?: string;
+
+  @JSONSchema({
+    description: 'Question status filter',
+    example: 'OPEN',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @JSONSchema({
+    description: 'Source filter',
+    example: 'AGRI_EXPERT',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsIn(['all', "AGRI_EXPERT", "AJRASAKHA", "WHATSAPP", "OUTREACH"])
+  source?: string;
+
+  @JSONSchema({
+    description: 'State/region filter (single or multiple)',
+    example: 'Karnataka',
+    oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    return Array.isArray(value) ? value : [value];
+  })
+  state?: string[];
+
+  @JSONSchema({
+    description: 'Priority filter',
+    example: 'high',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  priority?: string;
+
+  @JSONSchema({
+    description: 'Crop filter (single or multiple)',
+    example: 'Wheat',
+    oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    return Array.isArray(value) ? value : [value];
+  })
+  crop?: string[];
+
+  @JSONSchema({
+    description: 'Normalized crop filter (single or multiple)',
+    example: 'wheat',
+    oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    return Array.isArray(value) ? value : [value];
+  })
+  normalised_crop?: string[];
+
+  @JSONSchema({
+    description: 'Domain filter',
+    example: 'Agriculture',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  domain?: string;
+
+  @JSONSchema({
+    description: 'Filter based on userId',
+    example: '1234567890',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  user?: string;
+
+  @JSONSchema({
+    description: 'Minimum number of answers',
+    example: 0,
+    type: 'number',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  answersCountMin?: number;
+
+  @JSONSchema({
+    description: 'Maximum number of answers',
+    example: 100,
+    type: 'number',
+  })
+  @IsOptional()
+  @IsInt()
+  @Max(1000)
+  answersCountMax?: number;
+
+  @JSONSchema({
+    description: 'Basic filter options',
+    example: 'newest',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  filter?: 'newest' | 'oldest' | 'leastResponses' | 'mostResponses';
+
+  @JSONSchema({
+    description: 'Date range filter',
+    example: 'week',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  dateRange?: string;
+
+  @JSONSchema({
+    description: 'Page number for pagination',
+    example: 1,
+    type: 'number',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @JSONSchema({ description: 'Items per page', example: 10, type: 'number' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  limit?: number;
+
+  @JSONSchema({
+    description: 'Start time for custom date range filter',
+    example: '2025-11-12T18:30:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
+  @IsOptional()
+  startTime?: string;
+
+  @JSONSchema({
+    description: 'End time for custom date range filter',
+    example: '2025-11-27T18:30:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
+  @IsOptional()
+  endTime?: string;
+
+  @JSONSchema({
+    description: 'Review Level filter',
+    example: 'Level 1',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  review_level?: string;
+
+  @JSONSchema({
+    description:
+      "When 'true', also include questions pending reroute action for the user (used by the Expert Management dashboard). Defaults to off so the normal answering queue is unaffected.",
+    example: 'true',
+    type: 'string',
+  })
+  @IsOptional()
+  @IsString()
+  includeRerouted?: string;
+
+  @JSONSchema({
+    description: 'Start time for closedAt date range filter',
+    example: '2025-11-12T18:30:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
+  @IsOptional()
+  closedAtStart?: string;
+
+  @JSONSchema({
+    description: 'End time for closedAt date range filter',
+    example: '2025-11-27T18:30:00.000Z',
+    type: 'string',
+    format: 'date-time',
+  })
+  @IsOptional()
+  closedAtEnd?: string;
+
+  @JSONSchema({
+    description: 'consecutive approvals',
+    example: '1',
+    type: 'string',
+
+  })
+  @IsOptional()
+  consecutiveApprovals?: string;
+
+  @JSONSchema({
+    description: 'to get the questions based on allocation ',
+    example: 'on',
+    type: 'string',
+
+  })
+  @IsOptional()
+  autoAllocateFilter?: string;
+
+  @JSONSchema({
+    description: 'Filter for questions closed within the last 2 hours',
+    example: 'true',
+    type: 'boolean',
+  })
+  
+  @IsOptional()
+  closedInTwoHrs?: boolean;
+  @JSONSchema({
+    description: 'to filter hidden questions',
+    example: 'true',
+    type: 'string',
+
+  })
+  @IsOptional()
+  hiddenQuestions?: string;
+
+  @JSONSchema({
+    description: 'to filter duplicate questions',
+    example: 'true',
+    type: 'string',
+
+  })
+  @IsOptional()
+  duplicateQuestions?: string;
+
+  @JSONSchema({
+    description: 'to filter on hold questions',
+    example: 'true',
+    type: 'string',
+  })
+
+  @IsOptional()
+  isOnHold?: string;
+
+  @JSONSchema({
+    description: 'filter unallocated questions (empty queue or last history status != in-review)',
+    example: 'true',
+    type: 'string',
+  })
+  @IsOptional()
+  unallocatedQuestions?: string;
+
+  @JSONSchema({
+    description: 'filter questions assigned to PAE experts',
+    example: 'true',
+    type: 'string',
+  })
+  @IsOptional()
+  pae_review?: string;
+
+  @JSONSchema({
+    description: 'filter questions with status=non_agri',
+    example: 'true',
+    type: 'string',
+  })
+  @IsOptional()
+  is_non_agri?: string | boolean;
+
+  @JSONSchema({
+    description: 'filter questions with status=dynamic',
+    example: 'true',
+    type: 'string',
+  })
+  @IsOptional()
+  is_dynamic?: string | boolean;
+  @JSONSchema({
+    description: 'filter questions assigned to the given moderator ID (dedicated tab)',
+    example: '64f1a2b3c4d5e6f7a8b9c0d1',
+    type: 'string',
+  })
+  @IsOptional()
+  moderatorId?: string;
+}
+
+export interface IQuestionWithAnswerTexts {
+  question_id: string;
+  question_text: string;
+  answers: string[];
+}
+
+export interface IQuestionAnalysis {
+  question_id: string;
+  num_answers: number;
+  mean_similarity: number;
+  std_similarity: number;
+  recent_similarity: number;
+  collusion_score: number;
+  status: 'CONTINUE' | 'FLAGGED_FOR_REVIEW' | 'CONVERGED';
+  message: string;
+}
+
+class BulkDeleteQuestionDto {
+  questionIds: string[];
+}
+
+export class AllocatedQuestionsBodyDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  states?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  crops?: string[];
+}
+
+export class DetailedQuestionsBodyDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  states?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  normalisedCrops?: string[];
+}
+
+export class ApproveInitialAnswerBody {
+  @IsString()
+  answer :string;
+}
+
+class ReallocateExpertsSelectedQuestionsRequest {
+  @IsNotEmpty()
+  @IsArray()
+  @IsString({ each: true })
+  questionIds!: string[];
+}
+
+export const QUESTION_VALIDATORS = [
+  QuestionResponse,
+  AddQuestionBody,
+  QuestionIdParam,
+  GenerateQuestionsBody,
+  GetDetailedQuestionsQuery,
+  AddQuestionBodyDto,
+  AllocateExpertsRequest,
+  BulkPaeAllocateRequest,
+  ExpertInput,
+  RemoveAllocateBody,
+  ReplaceQueueExpertRequest,
+  UpdatedBy,
+  HistoryItem,
+  PreviousAllocationItem,
+  BulkDeleteQuestionDto,
+  DateRangeRequest,
+  AllocatedQuestionsBodyDto,
+  DetailedQuestionsBodyDto,
+  ApproveInitialAnswerBody,
+  ReallocateExpertsSelectedQuestionsRequest,
+];
+
+export {
+  QuestionResponse,
+  AddQuestionBody,
+  QuestionIdParam,
+  GenerateQuestionsBody,
+  GeneratedQuestionResponse,
+  GetDetailedQuestionsQuery,
+  AddQuestionBodyDto,
+  AllocateExpertsRequest,
+  BulkPaeAllocateRequest,
+  ExpertInput,
+  RemoveAllocateBody,
+  ReplaceQueueExpertRequest,
+  UpdatedBy,
+  HistoryItem,
+  BulkDeleteQuestionDto,
+  DateRangeRequest,
+  ReallocateExpertsSelectedQuestionsRequest,
+};
