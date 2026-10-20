@@ -21,6 +21,7 @@ class FarmerFeedbackCreate(BaseModel):
     state: Optional[str] = Field("Telangana", description="State of the farmer")
     district: Optional[str] = Field("General", description="District of the farmer")
     notes: Optional[str] = Field(None, description="Optional text comment if provided")
+    reason: Optional[str] = Field(None, description="Categorized reason for a not-helpful rating")
 
 
 class FarmerFeedbackRecord(FarmerFeedbackCreate):

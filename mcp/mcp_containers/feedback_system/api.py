@@ -210,6 +210,21 @@ def get_helpfulness_by_gdb(
     return formatted
 
 
+@app.get("/api/feedback/analytics/by-reason", tags=["Analytics"])
+def get_negative_feedback_reasons():
+    """Summarize why farmers rated answers as not helpful."""
+    feedback_coll = get_collection(FEEDBACK_COLLECTION)
+    counts: Dict[str, int] = {}
+    for record in feedback_coll.find({"is_helpful": False}):
+        reason = record.get("reason")
+        if reason:
+            counts[reason] = counts.get(reason, 0) + 1
+    return [
+        {"reason": reason, "count": count}
+        for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
 @app.get("/api/feedback/analytics/by-domain", response_model=List[BreakdownItem], tags=["Analytics"])
 def get_helpfulness_by_domain():
     """Helpfulness breakdown per agricultural domain."""

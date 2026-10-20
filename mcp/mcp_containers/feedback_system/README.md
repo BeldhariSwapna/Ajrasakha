@@ -9,9 +9,10 @@ ACE has 20,000+ expert-validated answers in the GDB, but previously had no struc
 
 This system closes the loop:
 1. Captures farmer feedback immediately after answer delivery on WhatsApp.
-2. Links feedback directly to the retrieved GDB entry ID.
-3. Automatically flags consistently underperforming entries (< 60% helpful over 10+ replies) and pushes them to the Reviewer Pipeline.
-4. Generates weekly analytical digests for agricultural specialists.
+2. For a negative rating, offers an optional localized reason: too technical, missing local detail, too long, or possibly inaccurate.
+3. Links feedback directly to the retrieved GDB entry ID.
+4. Automatically flags consistently underperforming entries (< 60% helpful over 10+ replies) and pushes them to the Reviewer Pipeline.
+5. Generates weekly analytical digests for agricultural specialists.
 
 ---
 
@@ -87,6 +88,7 @@ Interactive API docs available at: `http://localhost:9020/docs`
 | `POST` | `/api/feedback/prompt` | Triggers post-answer WhatsApp follow-up message |
 | `POST` | `/api/feedback/whatsapp-webhook` | Ingests incoming WhatsApp replies ('1' or '2') |
 | `POST` | `/api/feedback/submit` | Direct feedback creation (for UI / testing) |
+| `GET` | `/api/feedback/analytics/by-reason` | Counts categorized reasons for not-helpful ratings |
 | `GET` | `/api/feedback/analytics/summary` | Overall KPI summary (helpful/not helpful ratio) |
 | `GET` | `/api/feedback/analytics/by-gdb` | Helpfulness scores per specific GDB entry |
 | `GET` | `/api/feedback/analytics/by-domain` | Helpfulness breakdown per agricultural domain |

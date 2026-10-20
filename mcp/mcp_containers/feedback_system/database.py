@@ -272,7 +272,28 @@ def create_or_update_session(farmer_phone: str, session_data: Dict[str, Any]) ->
 def get_pending_session(farmer_phone: str) -> Optional[Dict[str, Any]]:
     """Get active pending session waiting for response from this farmer."""
     coll = get_collection(SESSIONS_COLLECTION)
-    return coll.find_one({"farmer_phone": farmer_phone, "status": "pending"})
+    session = coll.find_one({"farmer_phone": farmer_phone, "status": "pending"})
+    if session is None:
+        session = coll.find_one({"farmer_phone": farmer_phone, "status": "awaiting_reason"})
+    return session
+
+
+def update_session(farmer_phone: str, updates: Dict[str, Any]) -> None:
+    """Update the active WhatsApp feedback session."""
+    coll = get_collection(SESSIONS_COLLECTION)
+    coll.update_one({"farmer_phone": farmer_phone}, {"$set": {**updates, "updated_at": datetime.utcnow()}})
+
+
+def update_feedback_reason(feedback_id: str, reason: str) -> None:
+    """Attach a categorized explanation to previously recorded negative feedback."""
+    coll = get_collection(FEEDBACK_COLLECTION)
+    record_id: Any = feedback_id
+    try:
+        from bson import ObjectId
+        record_id = ObjectId(feedback_id)
+    except (ImportError, TypeError, ValueError):
+        pass
+    coll.update_one({"_id": record_id}, {"$set": {"reason": reason}})
 
 
 def close_session(farmer_phone: str) -> None:

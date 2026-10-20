@@ -19,6 +19,8 @@ from database import (
     get_pending_session,
     close_session,
     save_feedback,
+    update_session,
+    update_feedback_reason,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,33 @@ ACK_TEMPLATES = {
     "ta": "உங்கள் கருத்துக்கு நன்றி!",
     "mr": "आपल्या अभिप्रायाबद्दल धन्यवाद!",
 }
+
+
+
+REASON_PROMPTS = {
+    "en": "What should we improve? Reply 1 for simpler words, 2 for local details, 3 for a shorter answer, or 4 if the information seems incorrect.",
+    "hi": "?? ???? ???????? ??? ???? ?? ??? 1, ??????? ??????? ?? ??? 2, ???? ????? ???? ?? ??? 3, ?? ??????? ??? ???? ?? 4 ??????",
+    "te": "???? ??? ????????????? ?????? ???? ???? 1, ??????? ?????? ???? 2, ????? ??????? ???? 3, ??????? ??????? ????????? 4 ??????.",
+    "kn": "???? ??? ???????????? ??? ??????? 1, ?????? ???????? 2, ????? ????????? 3, ?????? ????????? ???????? 4 ???????.",
+    "ta": "??? ?????????? ????????? ???? ??????????? 1, ??????? ????????????? 2, ?????????? ????????? 3, ????? ????? ????????? 4 ??????????.",
+    "mr": "????? ??? ????????? ?????? ?????????? 1, ??????? ?????????? 2, ?????? ?????????? 3, ?????? ?????? ???????? 4 ?????.",
+}
+
+
+def get_reason_prompt(language: str = "en") -> str:
+    """Return the reason prompt in the farmer's language when available."""
+    return REASON_PROMPTS.get((language or "en").lower()[:2], REASON_PROMPTS["en"])
+REASON_LABELS = {
+    "1": "too_technical",
+    "2": "missing_local_detail",
+    "3": "too_long",
+    "4": "possibly_inaccurate",
+}
+
+
+def parse_feedback_reason(text: str) -> Optional[str]:
+    """Parse a one-digit, privacy-preserving reason for negative feedback."""
+    return REASON_LABELS.get(text.strip())
 
 WHATSAPP_SEND_URL = os.getenv("WA_SEND_MESSAGE_WEBHOOK_API_URL") or os.getenv("WHATSAPP_SERVER_URL")
 WHATSAPP_API_KEY = os.getenv("WA_WEBHOOK_API_KEY", "")
@@ -157,29 +186,41 @@ def parse_feedback_input(text: str) -> Tuple[bool, Optional[bool], Optional[int]
 
 
 async def handle_incoming_message(from_phone: str, message_text: str) -> Dict[str, Any]:
-    """
-    Evaluates incoming WhatsApp message.
-    If farmer has a pending feedback prompt and replies with 1 or 2,
-    captures feedback and closes the session.
-    """
+    """Capture a yes/no rating and, for negative ratings, an optional reason."""
     session = get_pending_session(from_phone)
-
     if not session:
         return {
             "is_feedback": False,
             "message": "No pending feedback session found. Normal query flow.",
         }
 
-    is_feedback, is_helpful, feedback_value = parse_feedback_input(message_text)
+    if session.get("status") == "awaiting_reason":
+        reason = parse_feedback_reason(message_text)
+        if reason is None:
+            return {
+                "is_feedback": False,
+                "message": "Incoming message is not a feedback reason. Proceed with normal NLP processing.",
+            }
+        update_feedback_reason(session.get("feedback_id"), reason)
+        close_session(from_phone)
+        ack_message = get_ack_text(session.get("language", "te"))
+        await send_whatsapp_message(from_phone, ack_message)
+        return {
+            "is_feedback": True,
+            "feedback_id": session.get("feedback_id"),
+            "gdb_id": session.get("gdb_id"),
+            "is_helpful": False,
+            "reason": reason,
+            "ack_sent": ack_message,
+        }
 
+    is_feedback, is_helpful, feedback_value = parse_feedback_input(message_text)
     if not is_feedback:
-        # Not a 1/2 response. Farmer might be asking a new question.
         return {
             "is_feedback": False,
             "message": "Incoming message is not a feedback answer. Proceed with normal NLP processing.",
         }
 
-    # Record feedback in MongoDB
     feedback_doc = {
         "gdb_id": session.get("gdb_id"),
         "farmer_phone": from_phone,
@@ -187,6 +228,7 @@ async def handle_incoming_message(from_phone: str, message_text: str) -> Dict[st
         "answer": session.get("answer"),
         "is_helpful": is_helpful,
         "feedback_value": feedback_value,
+        "reason": None,
         "domain": session.get("domain", "General Agriculture"),
         "crop": session.get("crop", "General"),
         "language": session.get("language", "te"),
@@ -194,19 +236,33 @@ async def handle_incoming_message(from_phone: str, message_text: str) -> Dict[st
         "district": session.get("district"),
         "created_at": datetime.utcnow(),
     }
-
     inserted_id = save_feedback(feedback_doc)
-    close_session(from_phone)
 
-    # Send thank you acknowledgment
+    if not is_helpful:
+        # Keep the negative rating even if the farmer skips the optional reason.
+        update_session(from_phone, {
+            "status": "awaiting_reason",
+            "feedback_id": inserted_id,
+        })
+        reason_prompt = get_reason_prompt(session.get("language", "en"))
+        await send_whatsapp_message(from_phone, reason_prompt)
+        return {
+            "is_feedback": True,
+            "feedback_id": inserted_id,
+            "gdb_id": session.get("gdb_id"),
+            "is_helpful": False,
+            "reason_requested": True,
+            "reason_prompt": reason_prompt,
+        }
+
+    close_session(from_phone)
     ack_message = get_ack_text(session.get("language", "te"))
     await send_whatsapp_message(from_phone, ack_message)
-
     return {
         "is_feedback": True,
         "feedback_id": inserted_id,
         "gdb_id": session.get("gdb_id"),
-        "is_helpful": is_helpful,
+        "is_helpful": True,
         "feedback_value": feedback_value,
         "ack_sent": ack_message,
     }
